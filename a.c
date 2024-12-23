@@ -13,9 +13,11 @@
 #define BLACK 1
 #define WHITE 2
 #define whole 2147483647
+#define inf 1000000000
 #define block 1073741823
 #define max(a,b) ((a)>(b)?(a):(b))
 #define min(a,b) ((a)>(b)?(b):(a))
+#define oppo(color) (((color)==1)?2:1)
 //#define modifybi(n,i,k) do{bline[n]=(((1<<(i<<1))-1)&bline[n])|(k<<(i<<1))|(bline[n]&(block^((1<<(i+1<<1))-1)));}while(false)
 #define modifybi(n,i,k) do{bline[(n)]=(((1<<((i)<<1))-1)&bline[(n)])|((k)<<((i)<<1))|(bline[(n)]&(block^((1<<((i)+1<<1))-1)));}while(false)
 
@@ -35,6 +37,7 @@ typedef struct {
     int x;
     int y;
 } Position;
+Position win_positions[5];
 int getscore(struct data node,int color);
 struct data score(int x,int y,int color,int mode);
 struct data bscore(int x,int y,int color,int mode);
@@ -64,47 +67,141 @@ int bstrstr(int s,int x,int len)
     return 0;
 }
 void draw_board(SDL_Renderer *renderer, int board[GRID_SIZE][GRID_SIZE], Position last_move, Position win_positions[5], bool game_over);
-Position get_ai_move(int board[GRID_SIZE][GRID_SIZE],int color) {
-    // 添加计时开始
-    clock_t start_time = clock();
-    
-    Position move;
-    struct data opans={0};
-    struct data ans={0};
-    int oppo=(color==1)?2:1;
-    //优先级是对方活四>对方冲四>己方活四>对方活3
-    int mx1=0,mx2=0; 
-    // for(int pp=1;pp<=10000;++pp)
-        for(int i=0;i<maxn;i++)
-        for(int j=0;j<maxn;j++)
-        {
-            if(board[i][j]) continue;
-            int attack=getscore(bscore(i,j,color,1),color);
-            int defence=0;
-            if(color==1&&attack==-1) continue;
 
-            struct data node={0};
-            node=bscore(i,j,oppo,1);
-            defence=node.five*50000+node.livefour*2000+node.rushfour*300+node.livethree*300+node.rushthree*50+node.livetwo*30+node.rushtwo*10+node.liveone*5;
-            if(attack+defence>mx1+mx2)
-            {
-                mx1=attack;
-                mx2=defence;
-                move.x=i;
-                move.y=j;
+#define DEPTH 1 // Define the depth of the search
+
+int evaluate_board(int board[GRID_SIZE][GRID_SIZE],int color) {
+    // Use existing scoring functions to evaluate the board
+    struct data sum = {0};
+    for (int i = 0; i < maxn; i++) {
+        for (int j = 0; j < maxn; j++) {
+            if (board[i][j] != color) continue;
+            struct data mine = bscore(i, j, color, 0);
+            sum.five += mine.five;
+            sum.livefour += mine.livefour;
+            sum.liveone += mine.liveone;
+            sum.livethree += mine.livethree;
+            sum.livetwo += mine.livetwo;
+            sum.longban += mine.longban;
+            sum.rushfour += mine.rushfour;
+            sum.rushthree += mine.rushthree;
+            sum.rushtwo += mine.rushtwo;
+        }
+    }
+    int oppo=oppo(color);
+    struct data node = {0};
+    for (int i = 0; i < maxn; i++) {
+        for (int j = 0; j < maxn; j++) {
+            if (board[i][j] != oppo) continue;
+            struct data mine = bscore(i, j, oppo, 0);
+            node.five += mine.five;
+            node.livefour += mine.livefour;
+            node.liveone += mine.liveone;
+            node.livethree += mine.livethree;
+            node.livetwo += mine.livetwo;
+            node.longban += mine.longban;
+            node.rushfour += mine.rushfour;
+            node.rushthree += mine.rushthree;
+            node.rushtwo += mine.rushtwo;
+        }
+    }
+        sum.five /=5;
+        sum.livefour /=4;
+        sum.livethree /=3;
+        sum.livetwo /=2;
+        sum.rushfour /=4;
+        sum.rushthree /=3;
+        sum.rushtwo /=2;
+
+        node.five /=5;
+        node.livefour /=4;
+        node.livethree /=3;
+        node.livetwo /=2;
+        node.rushfour /=4;
+        node.rushthree /=3;
+        node.rushtwo /=2;
+    int attack=getscore(sum,color);
+    int defence=node.five*100000+node.livefour*8000+node.rushfour*5000+node.livethree*2000+node.rushthree*250+node.livetwo*80+node.rushtwo*40+node.liveone*15;
+            //优先级是对方活四>对方冲四>己方活四>对方活3
+    //printf(" %d %d\n",attack,defence);
+    return attack-defence;
+}
+
+int dfs(int board[GRID_SIZE][GRID_SIZE], int depth, int alpha, int beta, int maximizingPlayer, int color) {
+    if (depth == 0 || check_winner(board, color, win_positions)) {
+        return evaluate_board(board,color);
+    }
+    int bestValue=0;
+    if (maximizingPlayer) {
+        bestValue=-inf;
+        for (int i = 0; i < GRID_SIZE; i++) {
+            for (int j = 0; j < GRID_SIZE; j++) {
+                if (board[i][j] == EMPTY) {
+                    board[i][j] = color;
+                    bmodifyline(i,j,color);
+                    int value = dfs(board, depth - 1, alpha, beta, 0, color);
+                    board[i][j] = EMPTY;
+                    bmodifyline(i,j,0);
+                    bestValue=max(bestValue,value);
+                    alpha=max(alpha,value);
+                    if (beta <= alpha) {
+                        return alpha; // Beta cut-off
+                    }
+                }
             }
         }
-    
-    // 计算并显示耗时
+    } else {
+        bestValue=inf;
+        int opponentColor = (color == BLACK) ? WHITE : BLACK;
+        for (int i = 0; i < GRID_SIZE; i++) {
+            for (int j = 0; j < GRID_SIZE; j++) {
+                if (board[i][j] == EMPTY) {
+                    board[i][j] = opponentColor;
+                    bmodifyline(i,j,opponentColor);
+                    int value = dfs(board, depth - 1, alpha, beta, 1, color);
+                    board[i][j] = EMPTY;
+                    bmodifyline(i,j,0);
+                    bestValue=min(bestValue,value);
+                    beta = min(beta, value);
+                    if (beta <= alpha) {
+                        return beta; // Alpha cut-off
+                    }
+                }
+            }
+        }
+    }
+    return bestValue;
+}
+Position get_ai_move1(int board[GRID_SIZE][GRID_SIZE], int color) {
+    clock_t start_time = clock();
+
+    Position bestMove = {-1, -1};
+    int bestValue = -inf;
+    for (int i = 0; i < GRID_SIZE; i++) {
+        for (int j = 0; j < GRID_SIZE; j++) {
+            if (board[i][j] == EMPTY) {
+                board[i][j] = color;
+                bmodifyline(i,j,color);
+                //printf("%d,%d ",i,j);
+                int moveValue = dfs(board, DEPTH, -inf, inf, 0, color);
+                board[i][j] = EMPTY;
+                bmodifyline(i,j,0);
+                if (moveValue > bestValue) {
+                    bestValue = moveValue;
+                    bestMove.x = i;
+                    bestMove.y = j;
+                }
+            }
+        }
+    }
+
     clock_t end_time = clock();
     double time_spent = (double)(end_time - start_time) / CLOCKS_PER_SEC;
     printf("AI思考时间: %.3f秒\n", time_spent);
-    
-    printf("point: %d %d atk:%d def:%d\n",move.x,move.y,mx1,mx2);
-    display(move.x,move.y,color,1);
-    return move;
+    printf("point: %d %d value: %d\n", bestMove.x, bestMove.y, bestValue);
+    display(bestMove.x, bestMove.y, color, 1);
+    return bestMove;
 }
-
 int main() {
     init();
     SDL_Init(SDL_INIT_VIDEO);
@@ -114,13 +211,13 @@ int main() {
     SDL_Renderer *renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
 
     Position last_move = {-1, -1}; // Initialize with an invalid position
-    Position win_positions[5]; // To store winning positions
+     // To store winning positions
     bool running = true;
     bool game_over = false; // New flag to indicate if the game is over
 
     //Ask the user if AI should go first
     char choice;
-    int aichoice=123;
+    int aichoice=2;
     printf("Do you want the AI to go first? (y/n): ");
     scanf(" %c", &choice);
     int current_player = BLACK;
@@ -161,13 +258,41 @@ int main() {
         }
 
         if (!game_over &&current_player==aichoice) {
-            SDL_Delay(300); // Wait for 1 second before AI makes a move
-            Position ai_move = get_ai_move(board,current_player);
+            SDL_Delay(1500); // Wait for 1 second before AI makes a move
+            Position ai_move = get_ai_move1(board,current_player);
             board[ai_move.x][ai_move.y] = current_player;
             printf("%c%d\n",'A'+ai_move.y,maxn-ai_move.x);
             modifyline(ai_move.x,ai_move.y,current_player);
             bmodifyline(ai_move.x,ai_move.y,current_player);
-            
+               struct data sum={0};
+            for(int i=0;i<maxn;i++)
+                for(int j=0;j<maxn;j++)
+                {
+                    if(board[i][j]!=current_player) continue;
+                    struct data mine=bscore(i,j,current_player,0);     
+                    sum.five+=mine.five,sum.livefour+=mine.livefour,sum.liveone+=mine.liveone,sum.livethree+=mine.livethree,sum.livetwo+=mine.livetwo,sum.longban+=mine.longban,sum.rushfour+=mine.rushfour,sum.rushthree+=mine.rushthree,sum.rushtwo+=mine.rushtwo;
+
+                }
+            puts("The whole board score:");
+                    sum.five /=5;
+            sum.livefour /=4;
+            sum.livethree /=3;
+            sum.livetwo /=2;
+            sum.rushfour /=4;
+            sum.rushthree /=3;
+            sum.rushtwo /=2;
+            int ans=evaluate_board(board,(current_player));
+            printf("longban: %d \n",sum.longban);
+            printf("five: %d \n",sum.five);
+            printf("livefour: %d \n",sum.livefour);
+            printf("rushfour: %d \n",sum.rushfour);
+            printf("livethree: %d \n",sum.livethree);
+            printf("rushthree: %d \n",sum.rushthree);
+            printf("livetwo: %d \n",sum.livetwo);
+            printf("rushtwo: %d \n",sum.rushtwo);
+            printf("liveone: %d \n",sum.liveone);
+            printf("score: %d\n",ans);
+
             last_move.x = ai_move.y;
             last_move.y = ai_move.x;
             
@@ -176,7 +301,26 @@ int main() {
                 game_over = true; // Set game over flag
             }
             current_player = (current_player==BLACK)?WHITE:BLACK; 
-        }
+         }
+// draw_board(renderer, board, last_move, win_positions, game_over);
+//         if (!game_over &&current_player!=aichoice) {
+//             SDL_Delay(1500); // Wait for 1 second before AI makes a move
+//             Position ai_move = get_ai_move3(board,current_player);
+//             board[ai_move.x][ai_move.y] = current_player;
+//             printf("%c%d\n",'A'+ai_move.y,maxn-ai_move.x);
+//             modifyline(ai_move.x,ai_move.y,current_player);
+//             bmodifyline(ai_move.x,ai_move.y,current_player);
+
+//             last_move.x = ai_move.y;
+//             last_move.y = ai_move.x;
+            
+//             if (check_winner(board, current_player, win_positions)) {
+//                 printf("%s wins!\n", current_player == BLACK ? "Black" : "White");
+//                 game_over = true; // Set game over flag
+//             }
+//             current_player = (current_player==BLACK)?WHITE:BLACK; 
+//         }
+
 
         draw_board(renderer, board, last_move, win_positions, game_over);
     }
@@ -678,7 +822,7 @@ struct data bscore(int x,int y,int color,int mode) // mode  0:不落子 用于�
             }       
     }
     if(color==1&&ans.longban>0) 
-    {
+    { 
         if(mode) board[x][y]=0;
         if(mode) bmodifyline(x,y,0);
         return ans;
