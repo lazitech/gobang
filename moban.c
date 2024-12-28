@@ -105,9 +105,13 @@ void printboard();
 int getchess(int *x,int *y);
 int bjudge();
 int dfs(int board[GRID_SIZE][GRID_SIZE], int depth, int alpha, int beta, int maximizingPlayer, int color);
-int oneplay(int x,int y)
+int dfs2(int board[GRID_SIZE][GRID_SIZE], int depth, int alpha, int beta, int maximizingPlayer, int color);
+
+int oneplay(int x,int y,int color)
 {
-    arrayForInnerBoardLayout[SIZE-x][y-1] = currentplayer;
+    board[x-1][y-1]=color;
+    bmodifyline(x-1,y-1,color);
+    arrayForInnerBoardLayout[SIZE-x][y-1] = color;
     int state=bjudge();
     innerLayoutToDisplayArray(SIZE-x,y-1);
     displayBoard();
@@ -124,7 +128,7 @@ struct node ai_play()
     return ans;
 }
 
-#define DEPTH 5 // Define the depth of the search
+#define DEPTH 6 // Define the depth of the search
 
 int evaluate_board(int board[GRID_SIZE][GRID_SIZE],int color) {
     // Use existing scoring functions to evaluate the board
@@ -191,8 +195,9 @@ typedef struct {
 } ScoredPosition,*P;
 
 //int search_depth[]={25,25,25,25,25,25,25,25,15};
-//int search_depth[]={14,10,12,15,15,15};
-int search_depth[]={14,7,7,7,10,12,15}; 
+int search_depth2[]={14,10,12,15,15,15};
+int search_depth[]={14,7,7,10,10,12,15}; 
+
 // Comparison function for qsort
 int compare_scores(const void *a, const void *b) {
     return ((ScoredPosition *)b)->score - ((ScoredPosition *)a)->score;
@@ -204,7 +209,6 @@ inline int dfs(int board[GRID_SIZE][GRID_SIZE], int depth, int alpha, int beta, 
     int state=bjudge();
     if(state==color)
         return 1000000;
-    
     if(state==(oppo(color)))
         return -10000000;
         
@@ -218,6 +222,8 @@ inline int dfs(int board[GRID_SIZE][GRID_SIZE], int depth, int alpha, int beta, 
             if (board[i][j] == EMPTY) {
             int attack=getscore(bscore(i,j,color,1),color);
             int defence=getscore(bscore(i,j,oppo(color),1),oppo(color));
+            if(maximizingPlayer&&attack>=score_five) return attack;
+            if(maximizingPlayer==0 && defence>=score_five) return -defence;
             if(color==1&&attack==ban) continue;
             //defence=node.five*50000+node.livefour*2000+node.rushfour*300+node.livethree*300+node.rushthree*50+node.livetwo*30+node.rushtwo*10+node.liveone*5;
                 scored_positions[count++] = (ScoredPosition){{i, j}, attack+defence};
@@ -255,6 +261,66 @@ inline int dfs(int board[GRID_SIZE][GRID_SIZE], int depth, int alpha, int beta, 
     free(scored_positions);
     return (maximizingPlayer)?alpha:beta;
 }
+inline int dfs2(int board[GRID_SIZE][GRID_SIZE], int depth, int alpha, int beta, int maximizingPlayer, int color) {
+    if (depth == 0 )//|| check_winner(board, color, win_positions)||check_winner(board, oppo(color), win_positions)) {
+        return evaluate_board(board, color);
+    
+    int state=bjudge();
+    if(state==color)
+        return 1000000;
+    if(state==(oppo(color)))
+        return -10000000;
+        
+    ScoredPosition *scored_positions; // 修改为指针类型
+    scored_positions = (ScoredPosition *)malloc(sizeof(ScoredPosition) * 225); // 确保分配足够的内存
+    int count = 0;
+
+    // Evaluate each empty position
+    for (int i = 0; i < GRID_SIZE; i++) {
+        for (int j = 0; j < GRID_SIZE; j++) {
+            if (board[i][j] == EMPTY) {
+            int attack=getscore(bscore(i,j,color,1),color);
+            int defence=getscore(bscore(i,j,oppo(color),1),oppo(color));
+            if(maximizingPlayer&&attack>=score_five) return attack;
+            if(maximizingPlayer==0 && defence>=score_five) return -defence;
+            if(color==1&&attack==ban) continue;
+            //defence=node.five*50000+node.livefour*2000+node.rushfour*300+node.livethree*300+node.rushthree*50+node.livetwo*30+node.rushtwo*10+node.liveone*5;
+                scored_positions[count++] = (ScoredPosition){{i, j}, attack+defence};
+            }
+        }
+    }
+
+    // Sort positions by score
+    qsort(scored_positions, count, sizeof(ScoredPosition), compare_scores);
+
+    int search_limit = min(search_depth2[depth], count);
+
+    for (int i = 0; i < search_limit; i++) {
+        int x = scored_positions[i].pos.x;
+        int y = scored_positions[i].pos.y;
+        board[x][y] = maximizingPlayer ? color : oppo(color);
+        bmodifyline(x, y, board[x][y]);
+
+        int value = dfs2(board, depth - 1, alpha, beta, maximizingPlayer^1, color);
+
+        board[x][y] = EMPTY;
+        bmodifyline(x, y, 0);
+
+        if (maximizingPlayer) {
+            alpha = max(alpha, value);
+        } else {
+            beta = min(beta, value);
+        }
+
+        if (beta <= alpha) {
+
+            return (maximizingPlayer)?alpha:beta; // Alpha-Beta pruning
+        }
+    }
+    free(scored_positions);
+    return (maximizingPlayer)?alpha:beta;
+}
+
 
 
 Position get_ai_move_standard(int board[GRID_SIZE][GRID_SIZE],int color) {
@@ -323,7 +389,7 @@ Position get_ai_move1(int board[GRID_SIZE][GRID_SIZE], int color) {
     //puts("----------------------");
     //puts((color==1)?"black:":"white:");
     // Search only the top 15 positions
-    int search_limit = min(30, count);
+    int search_limit = min(15, count);
     for (int i = 0; i < search_limit; i++) {
         int x = scored_positions[i].pos.x;
         int y = scored_positions[i].pos.y;
@@ -383,7 +449,7 @@ Position get_ai_move2(int board[GRID_SIZE][GRID_SIZE], int color) {
     //    printf("%d,%d: %d\n",x,y,scored_positions[i].score);
         board[x][y] = color;
         bmodifyline(x, y, color);
-        int moveValue = dfs(board, 4, -inf, inf, 0, color);
+        int moveValue = dfs2(board, 4, -inf, inf, 0, color);
         board[x][y] = EMPTY;
         bmodifyline(x, y, 0);
         if (moveValue > bestValue) {
@@ -403,51 +469,7 @@ Position get_ai_move2(int board[GRID_SIZE][GRID_SIZE], int color) {
     return bestMove;
 }
 
-int dfs1(int board[GRID_SIZE][GRID_SIZE], int depth, int alpha, int beta, int maximizingPlayer, int color) {
-    // if (depth == 0 || check_winner(board, 1, win_positions)||check_winner(board, 2, win_positions)) {
-    //     return evaluate_board(board,color);
-    // }
-    int bestValue=0;
-    if (maximizingPlayer) {
-        bestValue=-inf;
-        for (int i = 0; i < GRID_SIZE; i++) {
-            for (int j = 0; j < GRID_SIZE; j++) {
-                if (board[i][j] == EMPTY) {
-                    board[i][j] = color;
-                    bmodifyline(i,j,color);
-                    int value = dfs1(board, depth - 1, alpha, beta, 0, color);
-                    board[i][j] = EMPTY;
-                    bmodifyline(i,j,0);
-                    bestValue=max(bestValue,value);
-                    alpha=max(alpha,value);
-                    if (beta <= alpha) {
-                        return alpha; // Beta cut-off
-                    }
-                }
-            }
-        }
-    } else {
-        bestValue=inf;
-        int opponentColor = (color == BLACK) ? WHITE : BLACK;
-        for (int i = 0; i < GRID_SIZE; i++) {
-            for (int j = 0; j < GRID_SIZE; j++) {
-                if (board[i][j] == EMPTY) {
-                    board[i][j] = opponentColor;
-                    bmodifyline(i,j,opponentColor);
-                    int value = dfs1(board, depth - 1, alpha, beta, 1, color);
-                    board[i][j] = EMPTY;
-                    bmodifyline(i,j,0);
-                    bestValue=min(bestValue,value);
-                    beta = min(beta, value);
-                    if (beta <= alpha) {
-                        return beta; // Alpha cut-off
-                    }
-                }
-            }
-        }
-    }
-    return bestValue;
-}
+
 Position get_ai_move3(int board[GRID_SIZE][GRID_SIZE], int color) {
     clock_t start_time = clock();
 
@@ -459,7 +481,7 @@ Position get_ai_move3(int board[GRID_SIZE][GRID_SIZE], int color) {
                 board[i][j] = color;
                 bmodifyline(i,j,color);
                 //printf("%d,%d ",i,j);
-                int moveValue = dfs1(board, 1, -inf, inf, 0, color);
+                int moveValue = dfs2(board, 1, -inf, inf, 0, color);
                 board[i][j] = EMPTY;
                 bmodifyline(i,j,0);
                 //printf("%d,%d: %d\n",i,j,moveValue);
@@ -485,6 +507,7 @@ int main()
     innerLayoutToDisplayArray(SIZE,SIZE);
     displayBoard();
     init();
+    puts("work of 吕安哲");
     puts("Please choose game mode:");
     puts("1. Human vs Human");
     puts("2. Human vs Computer");
@@ -521,7 +544,7 @@ int main()
                 else break;  
                 op=getchess(&x,&y);
             }
-            int state=oneplay(x,y);
+            int state=oneplay(x,y,currentplayer);
             if(state)
             {
                 printf("player %d wins!\n",state);
@@ -543,30 +566,30 @@ int main()
             puts("Please choose 1 or 2.");
             scanf("%d",&mode);
         }
-        board[7][7]=1;
-        bmodifyline(7,7,1);
-        oneplay(8,8);
+        if(mode==1)
+        {
+            oneplay(8,8,1);
+            currentplayer=(currentplayer==1)?2:1;
+        }
         int first=1;
-        currentplayer=(currentplayer==1)?2:1;
+        
         while(1)
         {
             puts("Let's get started!");
             if(currentplayer==mode)
             {
-                if(first&&mode==2)
-                {
-                    first=0;
-                            board[8][8]=1;
-        bmodifyline(8,8,1);
-        oneplay(9,9);
-                currentplayer=(currentplayer==1)?2:1;
-                    continue;
-                }
+                // if(first&&mode==2)
+                // {
+                //     first=0;
+                //     oneplay(9,9,2);
+                //     currentplayer=(currentplayer==1)?2:1;
+                //     continue;
+                // }
                 //struct node ans=ai_play();
-                Position ans =get_ai_move1(board,currentplayer);
+                Position ans =get_ai_move2(board,currentplayer);
                 board[ans.x][ans.y]=currentplayer;
                 bmodifyline(ans.x,ans.y,currentplayer);
-                int state=oneplay(ans.x+1,ans.y+1);
+                int state=oneplay(ans.x+1,ans.y+1,currentplayer);
                 if(state)
                 {
                     printf("player %d wins!\n",state);
@@ -598,7 +621,7 @@ int main()
                 op=getchess(&x,&y);
             }
             printf("%d,%d\n",x,y);
-            int state=oneplay(x,y);
+            int state=oneplay(x,y,currentplayer);
             board[x-1][y-1]=currentplayer;
             bmodifyline(x-1,y-1,currentplayer);
             if(state)
@@ -611,27 +634,26 @@ int main()
     }
     if(gamemode==3)
     {
-                            board[7][7]=1;
-        bmodifyline(7,7,1);
-        oneplay(8,8);
+
+        oneplay(8,8,1);
                         currentplayer=(currentplayer==1)?2:1;
+
+        oneplay(9,9,2);
+                        currentplayer=(currentplayer==1)?2:1;
+                        
         while(1)
         {
 
-                            Position ans =get_ai_move1(board,currentplayer);
-                board[ans.x][ans.y]=currentplayer;
-                bmodifyline(ans.x,ans.y,currentplayer);
-                int state=oneplay(ans.x+1,ans.y+1);
+                            Position ans =get_ai_move2(board,currentplayer);
+                int state=oneplay(ans.x+1,ans.y+1,currentplayer);
                 if(state)
                 {
                     printf("player %d wins!\n",state);
                     return 0;
                 }
                 currentplayer=(currentplayer==1)?2:1;
-                                ans =get_ai_move2(board,currentplayer);
-                board[ans.x][ans.y]=currentplayer;
-                bmodifyline(ans.x,ans.y,currentplayer);
-                state=oneplay(ans.x+1,ans.y+1);
+                                ans = get_ai_move1(board,currentplayer);
+                state=oneplay(ans.x+1,ans.y+1,currentplayer);
                 if(state)
                 {
                     printf("player %d wins!\n",state);
@@ -732,7 +754,7 @@ void printboard()
     for(int j=0;j<SIZE;++j)
         printf("%d ",arrayForInnerBoardLayout[i][j]);
 }
-int bjudge()
+inline int bjudge()
 {
     for(int i=0;i<=90;++i)
     {
@@ -877,7 +899,7 @@ Position get_ai_move(int board[GRID_SIZE][GRID_SIZE],int color) {
 }
 
 
-int getscore(struct data node,int color)
+int ggetscore(struct data node,int color)
 {
     if(color==2)     
     {
@@ -889,6 +911,19 @@ int getscore(struct data node,int color)
     if(node.livefour+node.rushfour>1) return -1;
     if(node.livethree>1) return -1; 
     return node.livefour*4320+node.rushfour*720+node.livethree*720+node.rushthree*120+node.livetwo*60+node.rushtwo*20+node.liveone*10;
+}
+inline int getscore(struct data node,int color)
+{
+    if(color==2)     
+    {
+        if(node.five) return score_five;
+        return node.livefour*score_livefour+node.rushfour*score_rushfour+node.livethree*score_livethere+node.rushthree*score_rushthere+node.livetwo*score_livetwo/2+node.rushtwo*score_rushtwo+node.liveone*score_liveone;
+    }
+    if(node.five)   return score_five;
+    if(node.longban)    return ban;
+    if(node.livefour+node.rushfour>1) return ban;
+    if(node.livethree>1) return ban; 
+    return node.livefour*score_livefour+node.rushfour*score_rushfour+node.livethree*score_livethere+node.rushthree*score_rushthere+node.livetwo*score_livetwo/2+node.rushtwo*score_rushtwo+node.liveone*score_liveone;
 }
 
 struct data bscore(int x,int y,int color,int mode) // mode  0:不落子 用于计算被毁掉的组合情况 1：落子 用于计算新产生的组合情况
