@@ -7,6 +7,7 @@
 #define WINDOW_WIDTH 600
 #define WINDOW_HEIGHT 600
 #define GRID_SIZE 15
+#define GRID_maxn 15
 #define CELL_SIZE 80
 #define maxn 15
 #define EMPTY 0
@@ -38,8 +39,8 @@ int maxdepth4;
 int maxdepth6;
 int maxdepth8;
 char line[95][50];   
-int board[GRID_SIZE][GRID_SIZE] = {EMPTY};
-int bline[95];
+int global_board[GRID_SIZE][GRID_SIZE] = {EMPTY};
+int global_bline[95];
 int linelen[95];
 struct data
 {
@@ -55,15 +56,14 @@ typedef struct {
 } Position;
 
 int getscore(struct data node,int color);
-struct data bscore(int x,int y,int color,int mode);
-struct data killscore(int x,int y,int color,int mode);
+struct data bscore(int bline[95],int board[GRID_maxn][GRID_maxn],int x,int y,int color,int mode);
+struct data killscore(int bline[95],int board[GRID_maxn][GRID_maxn],int x,int y,int color,int mode);
 
-int is_forbidden_move(int x,int y);
-void bmodifyline(int x,int y,int k);
+void bmodifyline(int bline[95],int x,int y,int k);
 void substr(char* src, char* dest, int l, int r , int maxlen);
 void processdirc(int x,int y,int dirca[],int dircb[]);
 void init();
-int is_ban_move(int x,int y);
+
 int bstrstr(int s,int x,int len)
 {   
     int temp=((1<<(len<<1))-1);
@@ -123,20 +123,21 @@ void innerLayoutToDisplayArray(int x,int y);
 void displayBoard(void);
 void printboard();
 int getchess(int *x,int *y);
-int bjudge();
+int bjudge(int bline[95]);
 int dfscount;
-int dfs(int board[GRID_SIZE][GRID_SIZE], int depth, int alpha, int beta, int maximizingPlayer, int color);
+int dfs(int bline[95],int board[GRID_SIZE][GRID_SIZE], int depth, int alpha, int beta, int maximizingPlayer, int color);
 int dfs2(int board[GRID_SIZE][GRID_SIZE], int depth, int alpha, int beta, int maximizingPlayer, int color);
+int dfs3(int board[GRID_SIZE][GRID_SIZE], int depth, int alpha, int beta, int maximizingPlayer, int color);
 
 int oneplay(int x,int y,int color)
 {
     
     totalround++;
     printf("The %d move for %s\n",totalround,(color==1)?"black":"white");
-    board[x-1][y-1]=color;
-    bmodifyline(x-1,y-1,color);
+    global_board[x-1][y-1]=color;
+    bmodifyline(global_bline,x-1,y-1,color);
     arrayForInnerBoardLayout[SIZE-x][y-1] = color;
-    int state=bjudge();
+    int state=bjudge(global_bline);
     innerLayoutToDisplayArray(SIZE-x,y-1);
     displayBoard();
     return state;
@@ -154,7 +155,7 @@ struct node ai_play()
 
 #define DEPTH 6 // Define the depth of the search
 int is_killing_point(int x, int y, int color, int kill_type) {
-    struct data score = bscore(x, y, color, 1);
+    struct data score = bscore(global_bline,global_board,x, y, color, 1);
     
     if(kill_type == KILL_VCF) {
         // VCF只考虑冲四和活四
@@ -174,14 +175,13 @@ typedef struct {
 } KillResult;
 int killcount=0;
 // 统一的算杀函数
-KillResult kill_search(int board[GRID_SIZE][GRID_SIZE], int depth, int color, 
-                      int maximizingPlayer, int kill_type, int alpha, int beta) {
+KillResult kill_search(int bline[95], int board[GRID_SIZE][GRID_SIZE], int depth, int color, int maximizingPlayer, int kill_type, int alpha, int beta) {
     KillResult result = {{-1, -1}, 0};
     
     killcount++;
 
     // 检查是否已经连五
-    int state = bjudge();
+    int state = bjudge(bline);
     if(state == color) {
         result.win = 1;
         return result;
@@ -202,17 +202,35 @@ KillResult kill_search(int board[GRID_SIZE][GRID_SIZE], int depth, int color,
         for(int j = 0; j < GRID_SIZE; j++) {
             if(board[i][j] == EMPTY) {
                     if(maximizingPlayer) {
-                    struct data score = killscore(i, j, color, 0);
-                    if(score.five>0||score.livefour > 0 || score.rushfour > 0||score.livethree>0) {
+                    struct data score = killscore(bline,board,i, j, color, 0);
+                    if(color == BLACK)
+                    {
+                        if(score.longban>0) continue;
+                        if(score.livefour+score.rushfour>1) continue;
+                        if(score.livethree+score.rushthree>1) continue;
+                    }
+                    if(score.five>0||score.livefour > 0 ||score.rushfour > 0||score.livethree>0) {
                         
                         moves[move_count++] = (ScoredPosition){{i, j}, score.five*score_five+score.livefour*score_livefour+score.rushfour*2000+score.livethree*score_livethere};
                         
                     }
                 } else {
                     // 防守方考虑所有空点
-                    struct data score1 = killscore(i, j, color, 0);
-                    struct data score2 = killscore(i, j, oppo(color), 0);
-                    
+                    struct data score1 = killscore(bline,board,i, j, color, 0);
+                    struct data score2 = killscore(bline,board,i, j, oppo(color), 0);
+                    if(color == BLACK)
+                    {
+                        if(score1.longban>0) continue;
+                        if(score1.livefour+score1.rushfour>1) continue;
+                        if(score1.livethree+score1.rushthree>1) continue;
+                    }
+                    else
+                    {
+                        if(score2.longban>0) continue;
+                        if(score2.livefour+score2.rushfour>1) continue;
+                        if(score2.livethree+score2.rushthree>1) continue;
+                        
+                    }
                     if(score1.five>0||score2.five>0||score1.livefour > 0 ||score2.livefour>0||score2.rushfour>0) {
                         moves[move_count++] = (ScoredPosition){{i, j}, getscore(score1, color)+getscore(score2, oppo(color))};
                     }
@@ -236,12 +254,12 @@ KillResult kill_search(int board[GRID_SIZE][GRID_SIZE], int depth, int color,
             int y = moves[i].pos.y;
             
             board[x][y] = color;
-            bmodifyline(x, y, color);
+            bmodifyline(bline,x, y, color);
             
-            KillResult child = kill_search(board, depth - 1, color, 0, kill_type, alpha, beta);
+            KillResult child = kill_search(bline,board, depth - 1, color, 0, kill_type, alpha, beta);
             
             board[x][y] = EMPTY;
-            bmodifyline(x, y, 0);
+            bmodifyline(bline,x, y, 0);
             
             if(child.win == 1) {
                 result.win = 1;
@@ -261,12 +279,12 @@ KillResult kill_search(int board[GRID_SIZE][GRID_SIZE], int depth, int color,
             int y = moves[i].pos.y;
             
             board[x][y] = oppo(color);
-            bmodifyline(x, y, oppo(color));
+            bmodifyline(bline,x, y, oppo(color));
             
-            KillResult child = kill_search(board, depth - 1, color, 1, kill_type, alpha, beta);
+            KillResult child = kill_search(bline,board, depth - 1, color, 1, kill_type, alpha, beta);
             
             board[x][y] = EMPTY;
-            bmodifyline(x, y, 0);
+            bmodifyline(bline,x, y, 0);
             
             if(child.win != 1) {
                 result.win = 0;
@@ -281,13 +299,13 @@ KillResult kill_search(int board[GRID_SIZE][GRID_SIZE], int depth, int color,
 
     return result;
 }
-int evaluate_board(int board[GRID_SIZE][GRID_SIZE],int color) {
+int evaluate_board(int bline[95], int board[GRID_SIZE][GRID_SIZE],int color) {
     // Use existing scoring functions to evaluate the board
     struct data sum = {0};
     for (int i = 0; i < maxn; i++) {
         for (int j = 0; j < maxn; j++) {
             if (board[i][j] != color) continue; 
-            struct data mine = bscore(i, j, color, 0);
+            struct data mine = bscore(bline,board,i, j, color, 0);
             sum.five += mine.five;
             sum.livefour += mine.livefour;
             sum.liveone += mine.liveone;
@@ -304,7 +322,7 @@ int evaluate_board(int board[GRID_SIZE][GRID_SIZE],int color) {
     for (int i = 0; i < maxn; i++) {
         for (int j = 0; j < maxn; j++) {
             if (board[i][j] != oppo) continue;
-            struct data mine = bscore(i, j, oppo, 0);
+            struct data mine = bscore(bline,board,i, j, oppo, 0);
             node.five += mine.five;
             node.livefour += mine.livefour;
             node.liveone += mine.liveone;
@@ -342,12 +360,16 @@ int evaluate_board(int board[GRID_SIZE][GRID_SIZE],int color) {
 
 
 
-
-inline int dfs(int board[GRID_SIZE][GRID_SIZE], int depth, int alpha, int beta, int maximizingPlayer, int color) {
+int evacount;
+inline int dfs(int bline[95], int board[GRID_SIZE][GRID_SIZE], int depth, int alpha, int beta, int maximizingPlayer, int color) {
     if (depth == 0 )//|| check_winner(board, color, win_positions)||check_winner(board, oppo(color), win_positions)) {
-        return evaluate_board(board, color);
+    {
+        evacount++;
+        return evaluate_board(bline,board, color);
+
+    }
     dfscount++;
-    int state=bjudge();
+    int state=bjudge(bline);
     if(state==color)
         return 1000000;
     if(state==(oppo(color)))
@@ -362,8 +384,8 @@ inline int dfs(int board[GRID_SIZE][GRID_SIZE], int depth, int alpha, int beta, 
     for (int i = 0; i < GRID_SIZE; i++) {
         for (int j = 0; j < GRID_SIZE; j++) {
             if (board[i][j] == EMPTY) {
-            int attack=getscore(bscore(i,j,self,1),self);
-            int defence=getscore(bscore(i,j,oppo(self),1),oppo(self));
+            int attack=getscore(bscore(bline,board,i,j,self,1),self);
+            int defence=getscore(bscore(bline,board,i,j,oppo(self),1),oppo(self));
             if(attack>=score_five) return attack*p;
             scoreboard[i][j][0]=attack;
             scoreboard[i][j][1]=defence; 
@@ -389,12 +411,12 @@ inline int dfs(int board[GRID_SIZE][GRID_SIZE], int depth, int alpha, int beta, 
             if(scoreboard[i][j][1]>=score_five)
             {
                 board[i][j] = self;
-                bmodifyline(i, j, self);
+                bmodifyline(bline,i, j, self);
 
-                int value = dfs(board, depth - 1, alpha, beta, maximizingPlayer^1, color);
+                int value = dfs(bline,board, depth - 1, alpha, beta, maximizingPlayer^1, color);
 
                 board[i][j] = EMPTY;
-                bmodifyline(i, j, 0);
+                bmodifyline(bline,i, j, 0);
 
                 if (maximizingPlayer) {
                     alpha = max(alpha, value);
@@ -437,12 +459,12 @@ inline int dfs(int board[GRID_SIZE][GRID_SIZE], int depth, int alpha, int beta, 
     //         if(scoreboard[i][j][1]>=score_livefour)
     //         {
     //             board[i][j] = maximizingPlayer ? color : oppo(color);
-    //             bmodifyline(i, j, board[i][j]);
+    //             bmodifyline(bline,i, j, board[i][j]);
 
-    //             int value = dfs(board, depth - 1, alpha, beta, maximizingPlayer^1, color);
+    //             int value = dfs(bline,board, depth - 1, alpha, beta, maximizingPlayer^1, color);
 
     //             board[i][j] = EMPTY;
-    //             bmodifyline(i, j, 0);
+    //             bmodifyline(bline,i, j, 0);
 
     //             if (maximizingPlayer) {
     //                 alpha = max(alpha, value);
@@ -484,12 +506,12 @@ inline int dfs(int board[GRID_SIZE][GRID_SIZE], int depth, int alpha, int beta, 
         int x = scored_positions[i].pos.x;
         int y = scored_positions[i].pos.y;
         board[x][y] = maximizingPlayer ? color : oppo(color);
-        bmodifyline(x, y, board[x][y]);
+        bmodifyline(bline,x, y, board[x][y]);
 
-        int value = dfs(board, depth - 1, alpha, beta, maximizingPlayer^1, color);
+        int value = dfs(bline,board, depth - 1, alpha, beta, maximizingPlayer^1, color);
 
         board[x][y] = EMPTY;
-        bmodifyline(x, y, 0);
+        bmodifyline(bline,x, y, 0);
 
         if (maximizingPlayer) {
             alpha = max(alpha, value);
@@ -506,329 +528,7 @@ inline int dfs(int board[GRID_SIZE][GRID_SIZE], int depth, int alpha, int beta, 
     return (maximizingPlayer)?alpha:beta;
 }
 
-inline int dfs2(int board[GRID_SIZE][GRID_SIZE], int depth, int alpha, int beta, int maximizingPlayer, int color) {
-    if (depth == 0 )//|| check_winner(board, color, win_positions)||check_winner(board, oppo(color), win_positions)) {
-        return evaluate_board(board, color);
-    
-    int state=bjudge();
-    if(state==color)
-        return 1000000;
-    if(state==(oppo(color)))
-        return -10000000;
-        
-    ScoredPosition *scored_positions; // 修改为指针类型
-    scored_positions = (ScoredPosition *)malloc(sizeof(ScoredPosition) * 225); // 确保分配足够的内存
-    int count = 0;
-
-    // Evaluate each empty position
-    for (int i = 0; i < GRID_SIZE; i++) {
-        for (int j = 0; j < GRID_SIZE; j++) {
-            if (board[i][j] == EMPTY) {
-            int attack=getscore(bscore(i,j,color,1),color);
-            int defence=getscore(bscore(i,j,oppo(color),1),oppo(color));
-            if(maximizingPlayer&&attack>=score_five) return attack;
-            if(maximizingPlayer==0 && defence>=score_five) return -defence;
-            if(color==1&&attack==ban) continue;
-            //defence=node.five*50000+node.livefour*2000+node.rushfour*300+node.livethree*300+node.rushthree*50+node.livetwo*30+node.rushtwo*10+node.liveone*5;
-                scored_positions[count++] = (ScoredPosition){{i, j}, attack+defence};
-            }
-        }
-    }
-
-    // Sort positions by score
-    qsort(scored_positions, count, sizeof(ScoredPosition), compare_scores);
-
-    int search_limit = min(search_depth2[depth], count);
-
-    for (int i = 0; i < search_limit; i++) {
-        int x = scored_positions[i].pos.x;
-        int y = scored_positions[i].pos.y;
-        board[x][y] = maximizingPlayer ? color : oppo(color);
-        bmodifyline(x, y, board[x][y]);
-
-        int value = dfs2(board, depth - 1, alpha, beta, maximizingPlayer^1, color);
-
-        board[x][y] = EMPTY;
-        bmodifyline(x, y, 0);
-
-        if (maximizingPlayer) {
-            alpha = max(alpha, value);
-        } else {
-            beta = min(beta, value);
-        }
-
-        if (beta <= alpha) {
-
-            return (maximizingPlayer)?alpha:beta; // Alpha-Beta pruning
-        }
-    }
-    free(scored_positions);
-    return (maximizingPlayer)?alpha:beta;
-}
-
-
-
-Position get_ai_move3(int board[GRID_SIZE][GRID_SIZE], int color) {
-    clock_t start_time = clock();
-    const double TIME_LIMIT = 15.0; // 设置10秒的时间限制
-    
-    ScoredPosition *scored_positions;
-    scored_positions = (ScoredPosition *)malloc(sizeof(ScoredPosition) * 225);
-    int count = 0;
-
-    // 初始评估所有空位
-    for (int i = 0; i < GRID_SIZE; i++) {
-        for (int j = 0; j < GRID_SIZE; j++) {
-            if (board[i][j] == EMPTY) {
-                if(color==1 && getscore(bscore(i,j,color,1),color)==ban) continue;
-                // 使用浅层搜索进行初始评估
-                board[i][j] = color;
-                bmodifyline(i, j, color);
-                int moveValue = dfs3(board, 2, -inf, inf, 0, color); // 初始深度为2
-                board[i][j] = EMPTY;
-                bmodifyline(i, j, 0);
-                scored_positions[count++] = (ScoredPosition){{i, j}, moveValue};
-            }
-        }
-    }
-
-    // 排序候选位置
-    qsort(scored_positions, count, sizeof(ScoredPosition), compare_scores);
-    
-    Position bestMove = {-1, -1};
-    int bestValue = -inf;
-    Position currentBestMove = {-1, -1};
-    int currentBestValue = -inf;
-    int search_limit = min(15, count);
-    
-    // 迭代加深搜索
-    for(int depth = 4; depth <= 8; depth += 2) {  // 从深度4开始，每次加2
-        currentBestValue = -inf;
-        
-        // 检查时间
-        clock_t current_time = clock();
-        double elapsed_time = (double)(current_time - start_time) / CLOCKS_PER_SEC;
-        if(elapsed_time >= TIME_LIMIT) {
-            printf("达到时间限制，使用深度%d的最佳结果\n", depth-2);
-            break;
-        }
-        
-        printf("正在搜索深度: %d\n", depth);
-        
-        // 对每个候选位置进行深度搜索
-        for (int i = 0; i < search_depth2[depth]; i++) {
-            int x = scored_positions[i].pos.x;
-            int y = scored_positions[i].pos.y;
-            
-            board[x][y] = color;
-            bmodifyline(x, y, color);
-            int moveValue = dfs3(board, depth, -inf, inf, 0, color);
-            board[x][y] = EMPTY;
-            bmodifyline(x, y, 0);
-            scored_positions[i].score=moveValue;
-            printf("深度%d - 位置(%d,%d): %d\n", depth, x, y, moveValue);
-            
-            if (moveValue > currentBestValue) {
-                currentBestValue = moveValue;
-                currentBestMove = scored_positions[i].pos;
-            }
-            
-            // 如果找到必胜点，立即返回
-            if (moveValue >= WIN_SCORE) {
-                bestMove = currentBestMove;
-                bestValue = currentBestValue;
-                goto search_end;
-            }
-        }
-        
-        // 更新全局最佳移动
-        bestMove = currentBestMove;
-        bestValue = currentBestValue;
-        
-        // 重新排序候选位置，用于下一轮迭代
-        // for(int i = 0; i < search_depth2[depth]; i++) {
-        //     scored_positions[i].score = (scored_positions[i].pos.x == bestMove.x && 
-        //                               scored_positions[i].pos.y == bestMove.y) ? inf : scored_positions[i].score;
-        //}
-        qsort(scored_positions, search_depth2[depth], sizeof(ScoredPosition), compare_scores);
-    }
-
-search_end:
-    clock_t end_time = clock();
-    double time_spent = (double)(end_time - start_time) / CLOCKS_PER_SEC;
-    
-    printf("\n搜索完成:\n");
-    printf("AI思考时间: %.3f秒\n", time_spent);
-    printf("最终选择: %d %d 评分: %d\n", bestMove.x, bestMove.y, bestValue);
-    putchar(bestMove.y+'A');
-    printf("%d\n", bestMove.x+1);
-    
-    free(scored_positions);
-    return bestMove;
-}
-inline int dfs3(int board[GRID_SIZE][GRID_SIZE], int depth, int alpha, int beta, int maximizingPlayer, int color) {
-    if (depth == 0 )//|| check_winner(board, color, win_positions)||check_winner(board, oppo(color), win_positions)) {
-        return evaluate_board(board, color);
-    
-    int state=bjudge();
-    if(state==color)
-        return 1000000;
-    if(state==(oppo(color)))
-        return -10000000;
-    int scoreboard[15][15][2];
-    int flag1,flag2,flag3;//1: 对方成五 2：自己活四 3：对方活四
-    flag1=flag2=flag3=0;
-    // Evaluate each empty position
-        int self,p;
-    self=(maximizingPlayer)?color:oppo(color);
-    p=(maximizingPlayer)?1:-1;  
-    for (int i = 0; i < GRID_SIZE; i++) {
-        for (int j = 0; j < GRID_SIZE; j++) {
-            if (board[i][j] == EMPTY) {
-            int attack=getscore(bscore(i,j,self,1),self);
-            int defence=getscore(bscore(i,j,oppo(self),1),oppo(self));
-            if(attack>=score_five) return attack*p;
-            scoreboard[i][j][0]=attack;
-            scoreboard[i][j][1]=defence; 
-            }
-            else
-                scoreboard[i][j][0]=scoreboard[i][j][1]=ban;
-        }
-    }
-
-    for (int i = 0; i < GRID_SIZE; i++) {
-        for (int j = 0; j < GRID_SIZE; j++) {
-            if(scoreboard[i][j][1]>=score_five)
-            {
-                flag1=1;
-                break;
-            }
-        }
-    }
-    if(flag1)
-    {
-        for (int i = 0; i < GRID_SIZE; i++) {
-        for (int j = 0; j < GRID_SIZE; j++) {
-            if(scoreboard[i][j][1]>=score_five)
-            {
-                board[i][j] = self;
-                bmodifyline(i, j, self);
-
-                int value = dfs3(board, depth - 1, alpha, beta, maximizingPlayer^1, color);
-
-                board[i][j] = EMPTY;
-                bmodifyline(i, j, 0);
-
-                if (maximizingPlayer) {
-                    alpha = max(alpha, value);
-                } else {
-                    beta = min(beta, value);
-                }
-
-                if (beta <= alpha) {
-
-                    return (maximizingPlayer)?alpha:beta; // Alpha-Beta pruning
-                }
-            }
-
-            }
-        }
-        return (maximizingPlayer)?alpha:beta;
-    }
-
-    for (int i = 0; i < GRID_SIZE; i++) {
-        for (int j = 0; j < GRID_SIZE; j++) {
-            if(scoreboard[i][j][0]>=score_livefour)
-            {
-                return scoreboard[i][j][0]*p;
-            }
-        }
-    }
-    // for (int i = 0; i < GRID_SIZE; i++) {
-    //     for (int j = 0; j < GRID_SIZE; j++) {
-    //         if(scoreboard[i][j][1]>=score_livefour)
-    //         {
-    //             flag3=1;
-    //             break;
-    //         }
-    //     }
-    // }
-    // if(flag3)
-    // {
-    //     for (int i = 0; i < GRID_SIZE; i++) {
-    //     for (int j = 0; j < GRID_SIZE; j++) {
-    //         if(scoreboard[i][j][1]>=score_livefour)
-    //         {
-    //             board[i][j] = maximizingPlayer ? color : oppo(color);
-    //             bmodifyline(i, j, board[i][j]);
-
-    //             int value = dfs(board, depth - 1, alpha, beta, maximizingPlayer^1, color);
-
-    //             board[i][j] = EMPTY;
-    //             bmodifyline(i, j, 0);
-
-    //             if (maximizingPlayer) {
-    //                 alpha = max(alpha, value);
-    //             } else {
-    //                 beta = min(beta, value);
-    //             }
-
-    //             if (beta <= alpha) {
-
-    //                 return (maximizingPlayer)?alpha:beta; // Alpha-Beta pruning
-    //             }
-    //         }
-
-    //         }
-    //     }
-    //     return (maximizingPlayer)?alpha:beta;
-    // }
-    ScoredPosition *scored_positions; // 修改为指针类型
-    scored_positions = (ScoredPosition *)malloc(sizeof(ScoredPosition) * 225); // 确保分配足够的内存
-    int count = 0;
-    
-    for (int i = 0; i < GRID_SIZE; i++) {
-        for (int j = 0; j < GRID_SIZE; j++) {
-            if (board[i][j] == EMPTY) {
-            int attack=scoreboard[i][j][0];
-            int defence=scoreboard[i][j][1];
-            if(self==1&&attack==ban) continue;
-            scored_positions[count++] = (ScoredPosition){{i, j}, attack+defence};
-            }
-        }
-    }
-
-    // Sort positions by score
-    qsort(scored_positions, count, sizeof(ScoredPosition), compare_scores);
-
-    int search_limit = min(search_depth[depth], count);
-
-    for (int i = 0; i < search_limit; i++) {
-        int x = scored_positions[i].pos.x;
-        int y = scored_positions[i].pos.y;
-        board[x][y] = maximizingPlayer ? color : oppo(color);
-        bmodifyline(x, y, board[x][y]);
-
-        int value = dfs3(board, depth - 1, alpha, beta, maximizingPlayer^1, color);
-
-        board[x][y] = EMPTY;
-        bmodifyline(x, y, 0);
-
-        if (maximizingPlayer) {
-            alpha = max(alpha, value);
-        } else {
-            beta = min(beta, value);
-        }
-
-        if (beta <= alpha) {
-
-            return (maximizingPlayer)?alpha:beta; // Alpha-Beta pruning
-        }
-    }
-    free(scored_positions);
-    return (maximizingPlayer)?alpha:beta;
-}
-Position get_ai_move_standard(int board[GRID_SIZE][GRID_SIZE],int color) {
+Position get_ai_move_standard(int bline[95], int board[GRID_SIZE][GRID_SIZE],int color) {
     // 添加计时开始
     clock_t start_time = clock();
     
@@ -842,12 +542,12 @@ Position get_ai_move_standard(int board[GRID_SIZE][GRID_SIZE],int color) {
         for(int j=0;j<maxn;j++)
         {
             if(board[i][j]) continue;
-            int attack=getscore(bscore(i,j,color,1),color);
+            int attack=getscore(bscore(bline,board,i,j,color,1),color);
             int defence=0;
             if(color==1&&attack==ban) continue;
 
             struct data node={0};
-            node=bscore(i,j,oppo,1);
+            node=bscore(bline,board,i,j,oppo,1);
             defence=node.five*50000+node.livefour*2000+node.rushfour*300+node.livethree*300+node.rushthree*50+node.livetwo*30+node.rushtwo*10+node.liveone*5;
             if(attack+defence>mx1+mx2)
             {
@@ -867,7 +567,7 @@ Position get_ai_move_standard(int board[GRID_SIZE][GRID_SIZE],int color) {
     return move;
 }
 
-Position get_ai_move1(int board[GRID_SIZE][GRID_SIZE], int color) {
+Position get_ai_move1(int bline[95], int board[GRID_SIZE][GRID_SIZE], int color) {
     clock_t start_time = clock();
     killcount=0;
     const double TIME_LIMIT = 150.0; // 设置10秒的时间限制
@@ -877,7 +577,7 @@ Position get_ai_move1(int board[GRID_SIZE][GRID_SIZE], int color) {
             if(board[x][y]==0)
             {
                 board[x][y]=color;
-                bmodifyline(x,y,color);
+                bmodifyline(bline,x,y,color);
                 
                 struct data ans={0};
                 int dira[5],dirb[5];
@@ -924,23 +624,25 @@ Position get_ai_move1(int board[GRID_SIZE][GRID_SIZE], int color) {
                     return move;
                 }
                 board[x][y]=0;
-                bmodifyline(x,y,0);
+                bmodifyline(bline,x,y,0);
 
             }
         }
     // 先尝试VCF算杀
-    for(int depth = 5; depth <= 9; depth += 2) {
-        KillResult kill_result = kill_search(board, depth, color, 1, KILL_VCF, -inf, inf);
+    for(int depth = 5; depth <= 11; depth += 2) {
+        KillResult kill_result = kill_search(bline,board, depth, color, 1, KILL_VCF, -inf, inf);
         if(kill_result.win == 1) {
-            printf("找到必胜序列(VCF), 深度: %d\n", depth);
+                double time_spent = (double)(clock() - start_time) / CLOCKS_PER_SEC;
+            printf("找到必胜序列(VCF), 深度: %d,用时%.3f秒\n", depth, time_spent);
             return kill_result.best_move;
         }
         
         // 检查时间限制
-       // double time_spent = (double)(clock() - start_time) / CLOCKS_PER_SEC;
+       
       //  if(time_spent >= 8.0) break;  // 超过10秒则停止算杀
     }
-    printf("未找到必胜策略\n");
+    double time_spent = (double)(clock() - start_time) / CLOCKS_PER_SEC;
+    printf("未找到必胜策略，用时%.3f秒\n", time_spent);
     printf("killcount:%d\n",killcount);
 
     ScoredPosition *scored_positions;
@@ -953,13 +655,13 @@ Position get_ai_move1(int board[GRID_SIZE][GRID_SIZE], int color) {
     for (int i = 0; i < GRID_SIZE; i++) {
         for (int j = 0; j < GRID_SIZE; j++) {
             if (board[i][j] == EMPTY) {
-                if(color==1 && getscore(bscore(i,j,color,1),color)==ban) continue;
+                if(color==1 && getscore(bscore(bline,board,i,j,color,1),color)==ban) continue;
                 // 使用浅层搜索进行初始评估
                 board[i][j] = color;
-                bmodifyline(i, j, color);
-                int moveValue = dfs(board, 2, -inf, inf, 0, color); // 初始深度为2
+                bmodifyline(bline,i, j, color);
+                int moveValue = dfs(bline,board, 2, -inf, inf, 0, color); // 初始深度为2
                 board[i][j] = EMPTY;
-                bmodifyline(i, j, 0);
+                bmodifyline(bline,i, j, 0);
                 scored_positions[count++] = (ScoredPosition){{i, j}, moveValue};
             }
         }
@@ -968,6 +670,7 @@ Position get_ai_move1(int board[GRID_SIZE][GRID_SIZE], int color) {
     // 排序候选位置
     qsort(scored_positions, count, sizeof(ScoredPosition), compare_scores);
     dfscount=0;
+    evacount=0;
     Position bestMove = {-1, -1};
     int bestValue = -inf;
     Position currentBestMove = {-1, -1};
@@ -995,10 +698,10 @@ Position get_ai_move1(int board[GRID_SIZE][GRID_SIZE], int color) {
 
             
             board[x][y] = color;
-            bmodifyline(x, y, color);
-            int moveValue = dfs(board, depth, -inf, inf, 0, color);
+            bmodifyline(bline,x, y, color);
+            int moveValue = dfs(bline,board, depth, -inf, inf, 0, color);
             board[x][y] = EMPTY;
-            bmodifyline(x, y, 0);
+            bmodifyline(bline,x, y, 0);
             scored_positions[i].score=moveValue;
             printf("深度%d - 位置(%d,%d): %d\n", depth, x, y, moveValue);
             
@@ -1026,76 +729,25 @@ Position get_ai_move1(int board[GRID_SIZE][GRID_SIZE], int color) {
 
 search_end:
     clock_t end_time = clock();
-    double time_spent = (double)(end_time - start_time) / CLOCKS_PER_SEC;
+     time_spent = (double)(end_time - start_time) / CLOCKS_PER_SEC;
     
     printf("\n搜索完成:\n");
     printf("AI思考时间: %.3f秒\n", time_spent);
     printf("最终选择: %d %d 评分: %d\n", bestMove.x, bestMove.y, bestValue);
     putchar(bestMove.y+'A');
     printf("%d\n", bestMove.x+1);
-
-
+    if(bestValue<=-4320)
+    {
+        bestMove=get_ai_move_standard(bline,board,color);
+        return bestMove;
+    }
+    printf("evacount: %d\n",evacount);
     printf("dfscount: %d\n",dfscount);
     free(scored_positions);
     return bestMove;
 }
 
 
-
-
-Position get_ai_move2(int board[GRID_SIZE][GRID_SIZE], int color) {
-    clock_t start_time = clock();
-
-    ScoredPosition *scored_positions; // 修改为指针类型
-    scored_positions = (ScoredPosition *)malloc(sizeof(ScoredPosition) * 225); // 确保分配足够的内存
-    int count = 0;
-
-    // Evaluate each empty position
-    for (int i = 0; i < GRID_SIZE; i++) {
-        for (int j = 0; j < GRID_SIZE; j++) {
-            if (board[i][j] == EMPTY) {
-            int attack=getscore(bscore(i,j,color,1),color);
-            int defence=getscore(bscore(i,j,oppo(color),1),oppo(color));
-            if(color==1&&attack==ban) continue;
-            scored_positions[count++] = (ScoredPosition){{i, j}, attack+defence};
-            }
-        }
-    }
-
-    // Sort positions by score
-    qsort(scored_positions, count, sizeof(ScoredPosition), compare_scores);
-
-    Position bestMove = {-1, -1};
-    int bestValue = -inf;
-    //puts("----------------------");
-    //puts((color==1)?"black:":"white:");
-    // Search only the top 15 positions
-    int search_limit = min(30, count);
-    for (int i = 0; i < search_limit; i++) {
-        int x = scored_positions[i].pos.x;
-        int y = scored_positions[i].pos.y;
-    //    printf("%d,%d: %d\n",x,y,scored_positions[i].score);
-        board[x][y] = color;
-        bmodifyline(x, y, color);
-        int moveValue = dfs2(board, 4, -inf, inf, 0, color);
-        board[x][y] = EMPTY;
-        bmodifyline(x, y, 0);
-        if (moveValue > bestValue) {
-            bestValue = moveValue;
-            bestMove = scored_positions[i].pos;
-        }
-    }
-
-    clock_t end_time = clock();
-    double time_spent = (double)(end_time - start_time) / CLOCKS_PER_SEC;
-    printf("AI思考时间: %.3f秒\n", time_spent);
-    printf("point: %d %d value: %d\n", bestMove.x, bestMove.y, bestValue);
-    putchar(bestMove.y+'A');
-    printf("%d",bestMove.x+1);
-    puts("");
-    //display(bestMove.x, bestMove.y, color, 1);
-    return bestMove;
-}
 
 
 
@@ -1170,23 +822,22 @@ int main()
             currentplayer=(currentplayer==1)?2:1;
         }
         int first=1;
-        
         while(1)
         {
             puts("Let's get started!");
             if(currentplayer==mode)
             {
-                // if(first&&mode==2)
-                // {
-                //     first=0;
-                //     oneplay(9,9,2);
-                //     currentplayer=(currentplayer==1)?2:1;
-                //     continue;
-                // }
+                if(first&&mode==2)
+                {
+                    first=0;
+                    oneplay(9,9,2);
+                    currentplayer=(currentplayer==1)?2:1;
+                    continue;
+                }
                 //struct node ans=ai_play();
-                Position ans =get_ai_move1(board,currentplayer);
-                board[ans.x][ans.y]=currentplayer;
-                bmodifyline(ans.x,ans.y,currentplayer);
+                Position ans =get_ai_move1(global_bline,global_board,currentplayer);
+                global_board[ans.x][ans.y]=currentplayer;
+                bmodifyline(global_bline,ans.x,ans.y,currentplayer);
                 int state=oneplay(ans.x+1,ans.y+1,currentplayer);
                 if(state)
                 {
@@ -1219,9 +870,19 @@ int main()
                 op=getchess(&x,&y);
             }
             printf("%d,%d\n",x,y);
+            if(currentplayer==1)
+            {
+                int score=getscore(bscore(global_bline,global_board,x-1,y-1,currentplayer,1),currentplayer);
+                if(score==ban)
+                {
+                    puts("There is a ban move!!!");
+                    return 0;
+                }
+            }
+
             int state=oneplay(x,y,currentplayer);
-            board[x-1][y-1]=currentplayer;
-            bmodifyline(x-1,y-1,currentplayer);
+            global_board[x-1][y-1]=currentplayer;
+            bmodifyline(global_bline,x-1,y-1,currentplayer);
             if(state)
             {
                 printf("player %d wins!\n",state);
@@ -1242,7 +903,7 @@ int main()
         while(1)
         {
 
-                Position ans =get_ai_move3(board,currentplayer);
+                Position ans =get_ai_move1(global_bline,global_board,currentplayer);
                 int state=oneplay(ans.x+1,ans.y+1,currentplayer);
                     if(totalround==225)
                 {
@@ -1255,7 +916,7 @@ int main()
                     return 0;
                 }
                 currentplayer=(currentplayer==1)?2:1;
-                ans = get_ai_move1(board,currentplayer);
+                ans = get_ai_move_standard(global_bline,global_board,currentplayer);
                 state=oneplay(ans.x+1,ans.y+1,currentplayer);
                 if(totalround==225)
                 {
@@ -1268,6 +929,7 @@ int main()
                     return 0;
                 }
                 currentplayer=(currentplayer==1)?2:1;
+               
         }
     }
     return 0;
@@ -1362,7 +1024,7 @@ void printboard()
     for(int j=0;j<SIZE;++j)
         printf("%d ",arrayForInnerBoardLayout[i][j]);
 }
-inline int bjudge()
+inline int bjudge(int bline[95])
 {
     for(int i=0;i<=90;++i)
     {
@@ -1466,46 +1128,6 @@ int getchess(int *x,int *y)
     return 1;
 }
 
-Position get_ai_move(int board[GRID_SIZE][GRID_SIZE],int color) {
-    // 添加计时开始
-    clock_t start_time = clock();
-    
-    Position move;
-    struct data opans={0};
-    struct data ans={0};
-    int oppo=(color==1)?2:1;
-    //优先级是对方活四>对方冲四>己方活四>对方活3
-    int mx1=0,mx2=0; 
-     //for(int pp=1;pp<=5000;++pp)
-        for(register int i=0;i<maxn;i++)
-        for(int j=0;j<maxn;j++)
-        {
-            if(board[i][j]) continue;
-            int attack=getscore(bscore(i,j,color,1),color);
-            int defence=0;
-            if(color==1&&attack==-1) continue;
-
-            struct data node={0};
-            node=bscore(i,j,oppo,1);
-            defence=node.five*50000+node.livefour*2000+node.rushfour*300+node.livethree*300+node.rushthree*50+node.livetwo*30+node.rushtwo*10+node.liveone*5;
-            if(attack+defence>mx1+mx2)
-            {
-                mx1=attack;
-                mx2=defence;
-                move.x=i;
-                move.y=j;
-            }
-        }
-    
-    // 计算并显示耗时
-    clock_t end_time = clock();
-    double time_spent = (double)(end_time - start_time) / CLOCKS_PER_SEC;
-    printf("AI思考时间: %.3f秒\n", time_spent);
-    
-    printf("point: %d %d atk:%d def:%d\n",move.x,move.y,mx1,mx2);
-
-    return move;
-}
 
 
 int ggetscore(struct data node,int color)
@@ -1535,14 +1157,14 @@ inline int getscore(struct data node,int color)
     return node.livefour*score_livefour+node.rushfour*score_rushfour+node.livethree*score_livethere+node.rushthree*score_rushthere+node.livetwo*score_livetwo/2+node.rushtwo*score_rushtwo+node.liveone*score_liveone;
 }
 
-struct data bscore(int x,int y,int color,int mode) // mode  0:不落子 用于计算被毁掉的组合情况 1：落子 用于计算新产生的组合情况
+struct data bscore(int bline[95],int board[GRID_SIZE][GRID_SIZE],int x,int y,int color,int mode) // mode  0:不落子 用于计算被毁掉的组合情况 1：落子 用于计算新产生的组合情况
 {
 
     struct data ans={0};
     int dira[5],dirb[5];
     //ans.rushtwo=ans.five=ans.livefour=ans.liveone=ans.livethree=ans.livetwo=ans.longban=ans.rushfour=ans.rushthree=0;
     if(mode) board[x][y]=color;
-    if(mode) bmodifyline(x,y,color);
+    if(mode) bmodifyline(bline,x,y,color);
     processdirc(x,y,dira,dirb);
     // 1. longban
     if(color==1)
@@ -1557,7 +1179,7 @@ struct data bscore(int x,int y,int color,int mode) // mode  0:不落子 用于�
     if(color==1&&ans.longban>0) 
     { 
         if(mode) board[x][y]=0;
-        if(mode) bmodifyline(x,y,0);
+        if(mode) bmodifyline(bline,x,y,0);
         return ans;
     }
     // 2. five
@@ -1584,7 +1206,7 @@ struct data bscore(int x,int y,int color,int mode) // mode  0:不落子 用于�
     if(ans.five>0) 
     {
         if(mode) board[x][y]=0;
-        if(mode) bmodifyline(x,y,0);
+        if(mode) bmodifyline(bline,x,y,0);
         return ans;
     }
     // 3. livefour
@@ -1613,7 +1235,7 @@ struct data bscore(int x,int y,int color,int mode) // mode  0:不落子 用于�
     if(color==1&&ans.livefour>1) 
     {
         if(mode) board[x][y]=0;
-        if(mode) bmodifyline(x,y,0);
+        if(mode) bmodifyline(bline,x,y,0);
         return ans;
     }
     // 4. rushfour
@@ -1624,7 +1246,7 @@ struct data bscore(int x,int y,int color,int mode) // mode  0:不落子 用于�
         if(i<0||i>=maxn) continue;
         if(board[i][y]) continue;
         board[i][y]=color;
-        bmodifyline(i,y,color);
+        bmodifyline(bline,i,y,color);
         
         if(color==1)
         {
@@ -1639,7 +1261,7 @@ struct data bscore(int x,int y,int color,int mode) // mode  0:不落子 用于�
                 ans.rushfour++;
         }
         board[i][y]=0;
-        bmodifyline(i,y,0);
+        bmodifyline(bline,i,y,0);
     }
     
     for(  int i=y-4;i<=y+4;++i)
@@ -1647,7 +1269,7 @@ struct data bscore(int x,int y,int color,int mode) // mode  0:不落子 用于�
         if(i<0||i>=maxn) continue;
         if(board[x][i]) continue;
         board[x][i]=color;
-        bmodifyline(x,i,color);
+        bmodifyline(bline,x,i,color);
         
         if(color==1)
         {
@@ -1662,7 +1284,7 @@ struct data bscore(int x,int y,int color,int mode) // mode  0:不落子 用于�
                 ans.rushfour++;
         }
         board[x][i]=0;
-        bmodifyline(x,i,0);
+        bmodifyline(bline,x,i,0);
     }
     for(  int i=-4;i<=4;++i)
     {
@@ -1671,7 +1293,7 @@ struct data bscore(int x,int y,int color,int mode) // mode  0:不落子 用于�
         if(xx<0||xx>=maxn||yy<0||yy>=maxn) continue;
         if(board[xx][yy]) continue;
         board[xx][yy]=color;
-        bmodifyline(xx,yy,color);
+        bmodifyline(bline,xx,yy,color);
         
         if(color==1)
         {
@@ -1686,7 +1308,7 @@ struct data bscore(int x,int y,int color,int mode) // mode  0:不落子 用于�
                 ans.rushfour++;
         }
         board[xx][yy]=0;
-        bmodifyline(xx,yy,0);
+        bmodifyline(bline,xx,yy,0);
     }
     for(  int i=-4;i<=4;++i)
     {
@@ -1695,7 +1317,7 @@ struct data bscore(int x,int y,int color,int mode) // mode  0:不落子 用于�
         if(xx<0||xx>=maxn||yy<0||yy>=maxn) continue;
         if(board[xx][yy]) continue;
         board[xx][yy]=color;
-        bmodifyline(xx,yy,color);
+        bmodifyline(bline,xx,yy,color);
         
         if(color==1)
         {
@@ -1710,14 +1332,14 @@ struct data bscore(int x,int y,int color,int mode) // mode  0:不落子 用于�
                 ans.rushfour++;
         }
         board[xx][yy]=0;
-        bmodifyline(xx,yy,0);
+        bmodifyline(bline,xx,yy,0);
     }
     ans.rushfour-=ans.livefour*2;
     ans.rushfour=max(0,ans.rushfour);
     if(color==1&&ans.livefour+ans.rushfour>1) 
     {
         if(mode) board[x][y]=0;
-        if(mode) bmodifyline(x,y,0);
+        if(mode) bmodifyline(bline,x,y,0);
         return ans;
     }
     // 5. livethree
@@ -1735,7 +1357,7 @@ struct data bscore(int x,int y,int color,int mode) // mode  0:不落子 用于�
         }
         if(exist==0) continue;
         board[i][y]=color;
-        bmodifyline(i,y,color);
+        bmodifyline(bline,i,y,color);
         
         if(color==1)
         {
@@ -1743,7 +1365,7 @@ struct data bscore(int x,int y,int color,int mode) // mode  0:不落子 用于�
             if(bstrstr(des,0b0000010101010000,8)!=0||bstrstr(des,0b1000010101010000,8)!=0||bstrstr(des,0b1100010101010000,8)!=0||bstrstr(des,0b0000010101010010,8)!=0||bstrstr(des,0b1000010101010010,8)!=0||bstrstr(des,0b1100010101010010,8)!=0||bstrstr(des,0b0000010101010011,8)!=0||bstrstr(des,0b1000010101010011,8)!=0||bstrstr(des,0b1100010101010011,8)!=0)
             {
                 
-                struct data node=bscore(i,y,color,0);
+                struct data node=bscore(bline,board,i,y,color,0);
                 int temp=getscore(node,color);
                 if(temp!=-1) flag=1;
 
@@ -1759,7 +1381,7 @@ struct data bscore(int x,int y,int color,int mode) // mode  0:不落子 用于�
             }
         }
         board[i][y]=0;
-        bmodifyline(i,y,0);
+        bmodifyline(bline,i,y,0);
     }
     ans.livethree+=flag;
     flag=0;
@@ -1775,13 +1397,13 @@ struct data bscore(int x,int y,int color,int mode) // mode  0:不落子 用于�
         }
         if(exist==0) continue;
         board[x][i]=color;
-        bmodifyline(x,i,color);
+        bmodifyline(bline,x,i,color);
         if(color==1)
         {
             int des=bsubstr(bline[dira[0]],dirb[0]-5,dirb[0]+5,linelen[dira[0]]);
             if(bstrstr(des,0b0000010101010000,8)!=0||bstrstr(des,0b1000010101010000,8)!=0||bstrstr(des,0b1100010101010000,8)!=0||bstrstr(des,0b0000010101010010,8)!=0||bstrstr(des,0b1000010101010010,8)!=0||bstrstr(des,0b1100010101010010,8)!=0||bstrstr(des,0b0000010101010011,8)!=0||bstrstr(des,0b1000010101010011,8)!=0||bstrstr(des,0b1100010101010011,8)!=0)
             {
-                struct data node=bscore(x,i,color,0);
+                struct data node=bscore(bline,board,x,i,color,0);
                 int temp=getscore(node,color);
                 if(temp!=-1) flag=1;
                 processdirc(x,y,dira,dirb);
@@ -1794,7 +1416,7 @@ struct data bscore(int x,int y,int color,int mode) // mode  0:不落子 用于�
                 flag=1;
         }
         board[x][i]=0;
-        bmodifyline(x,i,0);
+        bmodifyline(bline,x,i,0);
     }
     ans.livethree+=flag;
     flag=0;
@@ -1812,14 +1434,14 @@ struct data bscore(int x,int y,int color,int mode) // mode  0:不落子 用于�
         }
         if(exist==0) continue;        
         board[xx][yy]=color;
-        bmodifyline(xx,yy,color);
+        bmodifyline(bline,xx,yy,color);
         
         if(color==1)
         {
             int des=bsubstr(bline[dira[2]],dirb[2]-5,dirb[2]+5,linelen[dira[2]]);
             if(bstrstr(des,0b0000010101010000,8)!=0||bstrstr(des,0b1000010101010000,8)!=0||bstrstr(des,0b1100010101010000,8)!=0||bstrstr(des,0b0000010101010010,8)!=0||bstrstr(des,0b1000010101010010,8)!=0||bstrstr(des,0b1100010101010010,8)!=0||bstrstr(des,0b0000010101010011,8)!=0||bstrstr(des,0b1000010101010011,8)!=0||bstrstr(des,0b1100010101010011,8)!=0)
             {
-                struct data node=bscore(xx,yy,color,0);
+                struct data node=bscore(bline,board,xx,yy,color,0);
                 int temp=getscore(node,color);
                 if(temp!=-1) flag=1;
                 processdirc(x,y,dira,dirb);
@@ -1832,7 +1454,7 @@ struct data bscore(int x,int y,int color,int mode) // mode  0:不落子 用于�
                 flag=1;
         }
         board[xx][yy]=0;
-        bmodifyline(xx,yy,0);
+        bmodifyline(bline,xx,yy,0);
     }
     ans.livethree+=flag;
     flag=0;
@@ -1850,14 +1472,14 @@ struct data bscore(int x,int y,int color,int mode) // mode  0:不落子 用于�
         }
         if(exist==0) continue;   
         board[xx][yy]=color;
-        bmodifyline(xx,yy,color);
+        bmodifyline(bline,xx,yy,color);
         
         if(color==1)
         {
             int des=bsubstr(bline[dira[3]],dirb[3]-5,dirb[3]+5,linelen[dira[3]]);
             if(bstrstr(des,0b0000010101010000,8)!=0||bstrstr(des,0b1000010101010000,8)!=0||bstrstr(des,0b1100010101010000,8)!=0||bstrstr(des,0b0000010101010010,8)!=0||bstrstr(des,0b1000010101010010,8)!=0||bstrstr(des,0b1100010101010010,8)!=0||bstrstr(des,0b0000010101010011,8)!=0||bstrstr(des,0b1000010101010011,8)!=0||bstrstr(des,0b1100010101010011,8)!=0)
             {
-                struct data node=bscore(xx,yy,color,0);
+                struct data node=bscore(bline,board,xx,yy,color,0);
                 int temp=getscore(node,color);
                 if(temp!=-1) flag=1;
                 processdirc(x,y,dira,dirb);
@@ -1870,14 +1492,14 @@ struct data bscore(int x,int y,int color,int mode) // mode  0:不落子 用于�
                 flag=1;
         }
         board[xx][yy]=0;
-        bmodifyline(xx,yy,0);
+        bmodifyline(bline,xx,yy,0);
     }
     ans.livethree+=flag;
     flag=0;
     if(color==1&&ans.livethree>1) 
     {
         if(mode) board[x][y]=0;
-        if(mode) bmodifyline(x,y,0);
+        if(mode) bmodifyline(bline,x,y,0);
         return ans;
     }
     
@@ -2001,19 +1623,19 @@ struct data bscore(int x,int y,int color,int mode) // mode  0:不落子 用于�
         }
     }
     if(mode) board[x][y]=0;
-    if(mode) bmodifyline(x,y,0);
+    if(mode) bmodifyline(bline,x,y,0);
     return ans;
 }
 
 
-struct data killscore(int x,int y,int color,int mode) // mode  0:不落子 用于计算被毁掉的组合情况 1：落子 用于计算新产生的组合情况
+struct data killscore(int bline[95],int board[maxn][maxn],int x,int y,int color,int mode) // mode  0:不落子 用于计算被毁掉的组合情况 1：落子 用于计算新产生的组合情况
 {
 
     struct data ans={0};
     int dira[5],dirb[5];
     //ans.rushtwo=ans.five=ans.livefour=ans.liveone=ans.livethree=ans.livetwo=ans.longban=ans.rushfour=ans.rushthree=0;
      board[x][y]=color;
-     bmodifyline(x,y,color);
+     bmodifyline(bline,x,y,color);
     processdirc(x,y,dira,dirb);
     // 1. longban
     if(color==1)
@@ -2028,7 +1650,7 @@ struct data killscore(int x,int y,int color,int mode) // mode  0:不落子 用�
     if(color==1&&ans.longban>0) 
     { 
          board[x][y]=0;
-         bmodifyline(x,y,0);
+         bmodifyline(bline,x,y,0);
         return ans;
     }
     // 2. five
@@ -2055,7 +1677,7 @@ struct data killscore(int x,int y,int color,int mode) // mode  0:不落子 用�
     if(ans.five>0) 
     {
          board[x][y]=0;
-         bmodifyline(x,y,0);
+         bmodifyline(bline,x,y,0);
         return ans;
     }
     // 3. livefour
@@ -2084,7 +1706,7 @@ struct data killscore(int x,int y,int color,int mode) // mode  0:不落子 用�
     if(ans.livefour>0) 
     {
          board[x][y]=0;
-         bmodifyline(x,y,0);
+         bmodifyline(bline,x,y,0);
         return ans;
     }
 
@@ -2096,7 +1718,7 @@ struct data killscore(int x,int y,int color,int mode) // mode  0:不落子 用�
         if(i<0||i>=maxn) continue;
         if(board[i][y]) continue;
         board[i][y]=color;
-        bmodifyline(i,y,color);
+        bmodifyline(bline,i,y,color);
         
         if(color==1)
         {
@@ -2111,7 +1733,7 @@ struct data killscore(int x,int y,int color,int mode) // mode  0:不落子 用�
                 ans.rushfour++;
         }
         board[i][y]=0;
-        bmodifyline(i,y,0);
+        bmodifyline(bline,i,y,0);
     }
     
     for(  int i=y-4;i<=y+4;++i)
@@ -2119,7 +1741,7 @@ struct data killscore(int x,int y,int color,int mode) // mode  0:不落子 用�
         if(i<0||i>=maxn) continue;
         if(board[x][i]) continue;
         board[x][i]=color;
-        bmodifyline(x,i,color);
+        bmodifyline(bline,x,i,color);
         
         if(color==1)
         {
@@ -2134,7 +1756,7 @@ struct data killscore(int x,int y,int color,int mode) // mode  0:不落子 用�
                 ans.rushfour++;
         }
         board[x][i]=0;
-        bmodifyline(x,i,0);
+        bmodifyline(bline,x,i,0);
     }
     for(  int i=-4;i<=4;++i)
     {
@@ -2143,7 +1765,7 @@ struct data killscore(int x,int y,int color,int mode) // mode  0:不落子 用�
         if(xx<0||xx>=maxn||yy<0||yy>=maxn) continue;
         if(board[xx][yy]) continue;
         board[xx][yy]=color;
-        bmodifyline(xx,yy,color);
+        bmodifyline(bline,xx,yy,color);
         
         if(color==1)
         {
@@ -2158,7 +1780,7 @@ struct data killscore(int x,int y,int color,int mode) // mode  0:不落子 用�
                 ans.rushfour++;
         }
         board[xx][yy]=0;
-        bmodifyline(xx,yy,0);
+        bmodifyline(bline,xx,yy,0);
     }
     for(  int i=-4;i<=4;++i)
     {
@@ -2167,7 +1789,7 @@ struct data killscore(int x,int y,int color,int mode) // mode  0:不落子 用�
         if(xx<0||xx>=maxn||yy<0||yy>=maxn) continue;
         if(board[xx][yy]) continue;
         board[xx][yy]=color;
-        bmodifyline(xx,yy,color);
+        bmodifyline(bline,xx,yy,color);
         
         if(color==1)
         {
@@ -2182,14 +1804,14 @@ struct data killscore(int x,int y,int color,int mode) // mode  0:不落子 用�
                 ans.rushfour++;
         }
         board[xx][yy]=0;
-        bmodifyline(xx,yy,0);
+        bmodifyline(bline,xx,yy,0);
     }
     ans.rushfour-=ans.livefour*2;
     ans.rushfour=max(0,ans.rushfour);
     if(ans.rushfour>0) 
     {
          board[x][y]=0;
-         bmodifyline(x,y,0);
+         bmodifyline(bline,x,y,0);
         return ans;
     }
     // 5. livethree
@@ -2207,7 +1829,7 @@ struct data killscore(int x,int y,int color,int mode) // mode  0:不落子 用�
         }
         if(exist==0) continue;
         board[i][y]=color;
-        bmodifyline(i,y,color);
+        bmodifyline(bline,i,y,color);
         
         if(color==1)
         {
@@ -2215,7 +1837,7 @@ struct data killscore(int x,int y,int color,int mode) // mode  0:不落子 用�
             if(bstrstr(des,0b0000010101010000,8)!=0||bstrstr(des,0b1000010101010000,8)!=0||bstrstr(des,0b1100010101010000,8)!=0||bstrstr(des,0b0000010101010010,8)!=0||bstrstr(des,0b1000010101010010,8)!=0||bstrstr(des,0b1100010101010010,8)!=0||bstrstr(des,0b0000010101010011,8)!=0||bstrstr(des,0b1000010101010011,8)!=0||bstrstr(des,0b1100010101010011,8)!=0)
             {
                 
-                struct data node=bscore(i,y,color,0);
+                struct data node=bscore(bline,board,i,y,color,0);
                 int temp=getscore(node,color);
                 if(temp!=-1) flag=1;
 
@@ -2231,7 +1853,7 @@ struct data killscore(int x,int y,int color,int mode) // mode  0:不落子 用�
             }
         }
         board[i][y]=0;
-        bmodifyline(i,y,0);
+        bmodifyline(bline,i,y,0);
     }
     ans.livethree+=flag;
     flag=0;
@@ -2247,13 +1869,13 @@ struct data killscore(int x,int y,int color,int mode) // mode  0:不落子 用�
         }
         if(exist==0) continue;
         board[x][i]=color;
-        bmodifyline(x,i,color);
+        bmodifyline(bline,x,i,color);
         if(color==1)
         {
             int des=bsubstr(bline[dira[0]],dirb[0]-5,dirb[0]+5,linelen[dira[0]]);
             if(bstrstr(des,0b0000010101010000,8)!=0||bstrstr(des,0b1000010101010000,8)!=0||bstrstr(des,0b1100010101010000,8)!=0||bstrstr(des,0b0000010101010010,8)!=0||bstrstr(des,0b1000010101010010,8)!=0||bstrstr(des,0b1100010101010010,8)!=0||bstrstr(des,0b0000010101010011,8)!=0||bstrstr(des,0b1000010101010011,8)!=0||bstrstr(des,0b1100010101010011,8)!=0)
             {
-                struct data node=bscore(x,i,color,0);
+                struct data node=bscore(bline,board,x,i,color,0);
                 int temp=getscore(node,color);
                 if(temp!=-1) flag=1;
                 processdirc(x,y,dira,dirb);
@@ -2266,7 +1888,7 @@ struct data killscore(int x,int y,int color,int mode) // mode  0:不落子 用�
                 flag=1;
         }
         board[x][i]=0;
-        bmodifyline(x,i,0);
+        bmodifyline(bline,x,i,0);
     }
     ans.livethree+=flag;
     flag=0;
@@ -2284,14 +1906,14 @@ struct data killscore(int x,int y,int color,int mode) // mode  0:不落子 用�
         }
         if(exist==0) continue;        
         board[xx][yy]=color;
-        bmodifyline(xx,yy,color);
+        bmodifyline(bline,xx,yy,color);
         
         if(color==1)
         {
             int des=bsubstr(bline[dira[2]],dirb[2]-5,dirb[2]+5,linelen[dira[2]]);
             if(bstrstr(des,0b0000010101010000,8)!=0||bstrstr(des,0b1000010101010000,8)!=0||bstrstr(des,0b1100010101010000,8)!=0||bstrstr(des,0b0000010101010010,8)!=0||bstrstr(des,0b1000010101010010,8)!=0||bstrstr(des,0b1100010101010010,8)!=0||bstrstr(des,0b0000010101010011,8)!=0||bstrstr(des,0b1000010101010011,8)!=0||bstrstr(des,0b1100010101010011,8)!=0)
             {
-                struct data node=bscore(xx,yy,color,0);
+                struct data node=bscore(bline,board,xx,yy,color,0);
                 int temp=getscore(node,color);
                 if(temp!=-1) flag=1;
                 processdirc(x,y,dira,dirb);
@@ -2304,7 +1926,7 @@ struct data killscore(int x,int y,int color,int mode) // mode  0:不落子 用�
                 flag=1;
         }
         board[xx][yy]=0;
-        bmodifyline(xx,yy,0);
+        bmodifyline(bline,xx,yy,0);
     }
     ans.livethree+=flag;
     flag=0;
@@ -2322,14 +1944,14 @@ struct data killscore(int x,int y,int color,int mode) // mode  0:不落子 用�
         }
         if(exist==0) continue;   
         board[xx][yy]=color;
-        bmodifyline(xx,yy,color);
+        bmodifyline(bline,xx,yy,color);
         
         if(color==1)
         {
             int des=bsubstr(bline[dira[3]],dirb[3]-5,dirb[3]+5,linelen[dira[3]]);
             if(bstrstr(des,0b0000010101010000,8)!=0||bstrstr(des,0b1000010101010000,8)!=0||bstrstr(des,0b1100010101010000,8)!=0||bstrstr(des,0b0000010101010010,8)!=0||bstrstr(des,0b1000010101010010,8)!=0||bstrstr(des,0b1100010101010010,8)!=0||bstrstr(des,0b0000010101010011,8)!=0||bstrstr(des,0b1000010101010011,8)!=0||bstrstr(des,0b1100010101010011,8)!=0)
             {
-                struct data node=bscore(xx,yy,color,0);
+                struct data node=bscore(bline,board,xx,yy,color,0);
                 int temp=getscore(node,color);
                 if(temp!=-1) flag=1;
                 processdirc(x,y,dira,dirb);
@@ -2342,46 +1964,32 @@ struct data killscore(int x,int y,int color,int mode) // mode  0:不落子 用�
                 flag=1;
         }
         board[xx][yy]=0;
-        bmodifyline(xx,yy,0);
+        bmodifyline(bline,xx,yy,0);
     }
     ans.livethree+=flag;
     flag=0;
     if(color==1&&ans.livethree>1) 
     {
          board[x][y]=0;
-         bmodifyline(x,y,0);
+         bmodifyline(bline,x,y,0);
         return ans;
     }
         if(ans.livethree>0) 
     {
          board[x][y]=0;
-         bmodifyline(x,y,0);
+         bmodifyline(bline,x,y,0);
         return ans;
     }
 
      board[x][y]=0;
-     bmodifyline(x,y,0);
+     bmodifyline(bline,x,y,0);
     return ans;
 }
 
 
 
-int is_forbidden_move(int x,int y)
-{
-    //return 0;
-    struct data ans=bscore(x,y,1,1);
-    int temp=getscore(ans,1);
-    if(temp==-1)   
-    {
-        // printf("There is a ban on: %d %d\n",x,y);
-        // printf("longban: %d\n",ans.longban);
-        // printf("five: %d\n",ans.five);
-        // printf("livefour: %d\n",ans.livefour);
-        // printf("rushfour: %d\n",ans.rushfour);
-        return 1;
-    }
-    return 0;
-}
+
+
 
 
  int bsubstr(int src,int l,int r,int maxnlen)
@@ -2453,42 +2061,42 @@ void init()
     int top=0;
     for ( int i = 0; i < maxn; ++i) {
         char *p = line[top];
-        int *pp = &bline[top++];
+        int *pp = &global_bline[top++];
         for (int j = 0; j < maxn; ++j)
-            *p = ('0' + board[i][j]), p++,*pp|=(board[i][j]<<(j+j));
+            *p = ('0' + global_board[i][j]), p++,*pp|=(global_board[i][j]<<(j+j));
         *p = '\0';
     }
     // 列
     for ( int i = 0; i < maxn; ++i) {
         char *p = line[top];
-        int *pp = &bline[top++];
+        int *pp = &global_bline[top++];
         for (int j = 0; j < maxn; ++j)
-            *p = ('0' + board[j][i]), p++,*pp|=(board[j][i]<<(j+j));
+            *p = ('0' + global_board[j][i]), p++,*pp|=(global_board[j][i]<<(j+j));
         *p = '\0';
     }
     // 主对角线
     for ( int i = 0; i < maxn; ++i) {
         char *p = line[top];
-        int *pp = &bline[top++];
+        int *pp = &global_bline[top++];
         for (int j = 0; i + j < maxn; ++j)
-            *p = ('0' + board[j][i + j]), p++, *pp|=(board[j][i + j]<<(j+j));
+            *p = ('0' + global_board[j][i + j]), p++, *pp|=(global_board[j][i + j]<<(j+j));
         *p = '\0';
     }
     for ( int i = 1; i < maxn; ++i) {
         char *p = line[top];
-        int *pp = &bline[top++];
+        int *pp = &global_bline[top++];
         for (int j = 0; i + j < maxn; ++j)
-            *p = ('0' + board[i + j][j]), p++,*pp|=(board[i + j][j]<<(j+j));
+            *p = ('0' + global_board[i + j][j]), p++,*pp|=(global_board[i + j][j]<<(j+j));
         *p = '\0';
     }
     // 副对角线
     for ( int i = 0; i < maxn + maxn - 1; ++i) {
         char *p = line[top];
-        int *pp = &bline[top++];
+        int *pp = &global_bline[top++];
         for (int j = 0; j <= i; ++j)
         {
             if(j<0||j>=maxn||i-j<0||i-j>=maxn) continue;
-            *p = ('0' + board[j][i - j]), p++,*pp|=(board[j][i - j]<<(j+j));
+            *p = ('0' + global_board[j][i - j]), p++,*pp|=(global_board[j][i - j]<<(j+j));
         }
         *p = '\0';
     }
@@ -2496,7 +2104,7 @@ void init()
          linelen[i]=strlen(line[i]);//,printf("%d %s\n",i,line[i]),printbi(bline[i]);
 }
 
- void bmodifyline(int x,int y,int k)
+ void bmodifyline(int bline[95],int x,int y,int k)
 {
     
     modifybi(x,y,k);
@@ -2530,12 +2138,5 @@ void init()
     return ;
 }
 
-
-int is_ban_move(int x,int y)
-{
-    int temp=getscore(bscore(x,y,1,1),1);
-    if(temp==-1) return 1;
-    return 0;
-}
 
 
