@@ -1353,6 +1353,7 @@ struct data bscore(int bline[95],int board[GRID_SIZE][GRID_SIZE],int x,int y,int
         for(int j=i-1;j<=i+1;++j)
         {
             if(j<x-3||j>x+3) continue;
+            if(j<0||j>=maxn) continue;
             if(board[j][y]==color) exist=1;
         }
         if(exist==0) continue;
@@ -1393,6 +1394,7 @@ struct data bscore(int bline[95],int board[GRID_SIZE][GRID_SIZE],int x,int y,int
         for(int j=i-1;j<=i+1;++j)
         {
             if(j<y-3||j>y+3) continue;
+            if(x<0||x>=maxn||j<0||j>=maxn) continue;
             if(board[x][j]==color) exist=1;
         }
         if(exist==0) continue;
@@ -1430,6 +1432,7 @@ struct data bscore(int bline[95],int board[GRID_SIZE][GRID_SIZE],int x,int y,int
         for(int j=i-1;j<=i+1;++j)
         {
             if(j<-3||j>3) continue;
+            if(x+j<0||x+j>=maxn||y-j<0||y-j>=maxn) continue;
             if(board[x+j][y-j]==color) exist=1;
         }
         if(exist==0) continue;        
@@ -1468,6 +1471,7 @@ struct data bscore(int bline[95],int board[GRID_SIZE][GRID_SIZE],int x,int y,int
         for(int j=i-1;j<=i+1;++j)
         {
             if(j<-3||j>3) continue;
+            if(x+j<0||x+j>=maxn||y+j<0||y+j>=maxn) continue;
             if(board[x+j][y+j]==color) exist=1;
         }
         if(exist==0) continue;   
@@ -1626,6 +1630,7 @@ struct data bscore(int bline[95],int board[GRID_SIZE][GRID_SIZE],int x,int y,int
     if(mode) bmodifyline(bline,x,y,0);
     return ans;
 }
+
 
 
 struct data killscore(int bline[95],int board[maxn][maxn],int x,int y,int color,int mode) // mode  0:不落子 用于计算被毁掉的组合情况 1：落子 用于计算新产生的组合情况
